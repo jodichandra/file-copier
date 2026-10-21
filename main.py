@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import threading
+import zipfile
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -29,6 +30,13 @@ COL_LOG_FG_OK   = "#4ec9b0"
 COL_LOG_FG_ERR  = "#f48771"
 COL_LOG_FG_INFO = "#d4d4d4"
 COL_LOG_FG_TIME = "#808080"
+
+# ==================== KONFIGURASI ZIP ====================
+# Format nama ZIP. Bisa diubah sesuka hati.
+# %Y = Tahun (4 digit), %m = Bulan (2 digit), %d = Hari (2 digit)
+# %H = Jam, %M = Menit, %S = Detik
+ZIP_NAME_FORMAT = "update_%Y%m%d.zip" 
+# Contoh lain: "backup_%Y%m%d_%H%M%S.zip" (tambah jam menit detik)
 
 CONFIG_FILE = Path.home() / ".file_copier_config.json"
 
@@ -259,6 +267,11 @@ class FileCopierApp:
         ttk.Button(toolbar, text="⟳ Refresh", style="Win.TButton",
                    command=refresh_cmd).pack(side="left", padx=2, pady=2)
 
+        # ==== FITUR ZIP di panel TUJUAN ====
+        if side == "right":
+            ttk.Button(toolbar, text="📦 Create Zip", style="Win.TButton",
+                       command=self.create_zip_from_dest).pack(side="left", padx=2, pady=2)
+
         # ==== SEARCH BAR ====
         search_frame = tk.Frame(frame, bg=COL_TOOLBAR_BG, bd=1, relief="raised")
         search_frame.pack(fill="x", padx=2, pady=(2, 0))
@@ -415,8 +428,61 @@ class FileCopierApp:
         save_config(self.config)
 
     # ==================== Listing ====================
-    def _populate(self, tree, directory: Path, filter_text: str = "", show_parent=True):
+    def _populate(self, tree, directory: Path, filter_text: str = "", show_parent=True, side="left"):
         tree.delete(*tree.get_children())
+        ft = filter_text.strip().lower()
+
+        # ==== MEKANISME PENCARIAN GLOBAL UNTUK SUMBER ====
+        if side == "left" and ft:
+            root_path = Path(self.source_root.get()) if self.source_root.get() else directory
+            if not root_path.exists():
+                return
+            # Pencarian rekursif dari Root Sumber
+            try:
+                entries = list(root_path.rglob(f"*{ft}*"))
+            except Exception:
+                entries = []
+            
+            # Sort: folder dulu, lalu berdasarkan path
+            entries.sort(key=lambda p: (not p.is_dir(), str(p).lower()))
+            
+            idx = 0
+            for entry in entries:
+                if entry == root_path: 
+                    continue
+                try:
+                    is_dir = entry.is_dir()
+                    rel_path = entry.relative_to(root_path)
+                    
+                    try:
+                        mtime = datetime.fromtimestamp(entry.stat().st_mtime)
+                        changed = mtime.strftime("%d/%m/%Y %H:%M:%S")
+                    except Exception:
+                        changed = ""
+
+                    if is_dir:
+                        icon = "📁"
+                        size_str = ""
+                        type_str = "File folder"
+                        tag = "folder" if idx % 2 == 0 else "folder_alt"
+                    else:
+                        icon = "📄"
+                        try:
+                            size_str = self._fmt_size(entry.stat().st_size)
+                        except Exception:
+                            size_str = ""
+                        type_str = self._file_type(entry.suffix)
+                        tag = "file" if idx % 2 == 0 else "file_alt"
+
+                    tree.insert("", "end",
+                                values=(f"{icon} {rel_path}", size_str, type_str, changed),
+                                tags=(tag, str(entry), "dir" if is_dir else "file"))
+                    idx += 1
+                except Exception:
+                    continue
+            return
+
+        # ==== MEKANISME NORMAL (TANPA PENCARIAN ATAU PENCARIAN TUJUAN) ====
         try:
             entries = list(directory.iterdir())
         except PermissionError:
@@ -427,8 +493,6 @@ class FileCopierApp:
 
         entries.sort(key=lambda p: (not p.is_dir(), p.name.lower()))
 
-        # Filter pencarian
-        ft = filter_text.strip().lower()
         if ft:
             entries = [e for e in entries if ft in e.name.lower()]
 
@@ -501,7 +565,7 @@ class FileCopierApp:
     def refresh_source(self):
         if self.current_source_dir and self.current_source_dir.exists():
             self._populate(self.left_list, self.current_source_dir,
-                           filter_text=self.source_filter.get())
+                           filter_text=self.source_filter.get(), side="left")
             self.left_path_label.config(text=str(self.current_source_dir))
         else:
             self.left_path_label.config(text="(belum dipilih)")
@@ -509,7 +573,7 @@ class FileCopierApp:
     def refresh_dest(self):
         if self.current_dest_dir and self.current_dest_dir.exists():
             self._populate(self.right_list, self.current_dest_dir,
-                           filter_text=self.dest_filter.get())
+                           filter_text=self.dest_filter.get(), side="right")
             self.right_path_label.config(text=str(self.current_dest_dir))
         else:
             self.right_path_label.config(text="(belum dipilih)")
@@ -664,6 +728,67 @@ class FileCopierApp:
                                    f"Error:\n" + "\n".join(errors[:10]))
         else:
             self.set_status(f"✔ {deleted_ok} item berhasil dihapus dari tujuan.", "#0a7d0a")
+
+    # ==================== FITUR ZIP ====================
+    def create_zip_from_dest(self):
+        """Membuat file ZIP dari semua isi folder Root Tujuan."""
+        dest_root_str = self.dest_root.get()
+        if not dest_root_str or not Path(dest_root_str).exists():
+            messagebox.showwarning("Peringatan", "Root folder tujuan belum dipilih atau tidak ditemukan!")
+            return
+            
+        dest_root = Path(dest_root_str)
+        
+        # ==== MENGGUNAKAN KONFIGURASI NAMA ZIP ====
+        zip_name = datetime.now().strftime(ZIP_NAME_FORMAT)
+        
+        save_path = filedialog.asksaveasfilename(
+            title="Simpan File ZIP",
+            initialdir=str(dest_root.parent),
+            initialfile=zip_name,
+            defaultextension=".zip",
+            filetypes=[("ZIP Archive", "*.zip")]
+        )
+        
+        if not save_path:
+            return
+            
+        self.log("-" * 80, "info")
+        self.log(f"📦 MEMBUAT ZIP — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "info")
+        self.log(f"   Sumber : {dest_root}", "info")
+        self.log(f"   Simpan : {save_path}", "info")
+        
+        # Jalankan di thread terpisah agar UI tidak freeze
+        threading.Thread(target=self._do_zip, args=(dest_root, save_path), daemon=True).start()
+
+    def _do_zip(self, source_dir, zip_path):
+        try:
+            self.set_status("⏳ Sedang membuat ZIP...", "#3a7bd5")
+            
+            # Hitung total file untuk progress bar
+            all_files = [f for f in Path(source_dir).rglob('*') if f.is_file()]
+            total_files = len(all_files)
+            
+            self.progress["maximum"] = max(total_files, 1)
+            self.progress["value"] = 0
+            
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for idx, file_path in enumerate(all_files, start=1):
+                    arcname = file_path.relative_to(source_dir)
+                    zipf.write(file_path, arcname)
+                    
+                    self.root.after(0, lambda v=idx: self.progress.configure(value=v))
+            
+            self.root.after(0, lambda: self.progress.configure(value=total_files))
+            self.log(f"✔ ZIP berhasil dibuat: {zip_path}", "ok")
+            self.set_status(f"✔ ZIP berhasil dibuat: {zip_path}", "#0a7d0a")
+            
+            self.root.after(0, lambda: messagebox.showinfo("Sukses", f"Berhasil membuat file ZIP:\n{zip_path}"))
+            
+        except Exception as e:
+            self.log(f"✘ Gagal membuat ZIP: {e}", "err")
+            self.set_status(f"✘ Gagal membuat ZIP", "#c00000")
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Gagal membuat ZIP:\n{e}"))
 
     # ==================== Copy ====================
     def send_to_destination(self):
