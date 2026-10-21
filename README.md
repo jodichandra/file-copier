@@ -31,35 +31,8 @@ drag-drop manual atau bikin folder satu-satu.
 
 ## 🖼️ Screenshot
 
-*(ganti dengan screenshot Anda sendiri)*
+<img width="1358" height="716" alt="image" src="https://github.com/user-attachments/assets/07efff68-226a-4761-b39c-940eb750efa5" />
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ Root Sumber: C:\laragon\www\project                   │
-│ Root Tujuan: D:\PROJECT UPDATE                               │
-├────────────────────────┬───────────────────────────────────┤
-│ SUMBER                 │ TUJUAN                            │
-│ C:\...\controllers\... │ D:\PROJECT UPDATE                   │
-│ [⬆Up][⟳Refresh]        │ [⬆Up][⟳Refresh]                   │
-│ 🔍 [admin_______][✕]   │ 🔍 [___________][✕]               │
-│ 📁 ..                  │ 📁 application                    │
-│ 📁 front               │                                   │
-│ 📄 Admin.php           │                                   │
-│ 📄 Antrol.php          │                                   │
-├────────────────────────┴───────────────────────────────────┤
-│ [═════════════════════════════════════════════════] 100%   │
-│ Selesai. 2 file berhasil dicopy.                           │
-│ 📜 LOG PENGIRIMAN FILE                          [🗑 Bersihkan]│
-│ [14:25:01] 📤 KIRIM FILE — 2026-10-15 14:25:01             │
-│ [14:25:01]    Dari  : C:\laragon\www\project          │
-│ [14:25:01]    Ke    : D:\PROJECT UPDATE                      │
-│ [14:25:01] ✔ [1/2] Auth.php                                │
-│ [14:25:01]      FROM: C:\...\application\libraries         │
-│ [14:25:01]      TO  : D:\PROJECT UPDATE\...\libraries        │
-└────────────────────────────────────────────────────────────┘
-```
-
----
 
 ## 🚀 Cara Menggunakan
 
